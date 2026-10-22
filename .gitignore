@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+venv/
+.venv/
+
+# macOS
+.DS_Store
+*.DS_Store
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Large ERA5 NetCDF files — tracked via Git LFS
+data/era5/**/*.nc
+
+# Raw GridSat NetCDF downloads (large, re-downloadable)
+data/gridsat_raw/
+
+# Numpy cache arrays
+data/v3_*.npy
+
+# IDE
+.vscode/
+.idea/
