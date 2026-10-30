@@ -22,6 +22,9 @@ data/gridsat_raw/
 # Numpy cache arrays
 data/v3_*.npy
 
+# Large model files (>100MB — GitHub limit)
+models/track_predictor.pkl
+
 # IDE
 .vscode/
 .idea/

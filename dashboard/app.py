@@ -5,6 +5,7 @@ Streamlit app — run with: streamlit run dashboard/app.py
 
 import io
 import os
+import sys
 import json
 import math
 import ssl
@@ -18,6 +19,20 @@ import matplotlib.pyplot as plt
 import streamlit as st
 import folium
 from streamlit_folium import st_folium
+
+# Add src to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+try:
+    from src.track_predictor import predict_track as ml_predict_track
+    _TRACK_MODEL = True
+except Exception:
+    _TRACK_MODEL = False
+
+try:
+    from src.surge_risk import estimate_surge_risk
+    _SURGE_MODEL = True
+except Exception:
+    _SURGE_MODEL = False
 
 warnings.filterwarnings("ignore")
 
@@ -333,7 +348,8 @@ def train_models(df):
 
 def make_folium_map(storm_lat, storm_lon, storm_wind,
                     lat_change, lon_change,
-                    track_df=None, active_cyclones=None):
+                    track_df=None, active_cyclones=None,
+                    track_forecast=None, surge_results=None):
     """
     Interactive Folium map with:
     - Real satellite/terrain basemap
@@ -474,6 +490,55 @@ def make_folium_map(storm_lat, storm_lon, storm_wind,
         dash_array="6",
         tooltip="Bay of Bengal study region",
     ).add_to(m)
+
+    # ── ML Track forecast (dashed blue line) ─────────────────────────────────
+    if track_forecast:
+        forecast_coords = [[storm_lat, storm_lon]] + \
+                          [[fp["lat"], fp["lon"]] for fp in track_forecast]
+        folium.PolyLine(
+            forecast_coords,
+            color="#0055cc",
+            weight=2.5,
+            opacity=0.85,
+            dash_array="8 4",
+            tooltip="ML Track Forecast (48h)",
+        ).add_to(m)
+        for fp in track_forecast:
+            if fp["hours_ahead"] % 12 == 0:
+                folium.CircleMarker(
+                    [fp["lat"], fp["lon"]],
+                    radius=5,
+                    color="#0055cc",
+                    fill=True,
+                    fill_color="#4499ff",
+                    fill_opacity=0.8,
+                    tooltip=f"+{fp['hours_ahead']}h → {fp['lat']:.1f}°N, {fp['lon']:.1f}°E",
+                ).add_to(m)
+
+    # ── Surge risk at coastal stations ────────────────────────────────────────
+    if surge_results:
+        surge_colors = {"LOW": "green", "MODERATE": "orange",
+                        "HIGH": "red", "EXTREME": "darkred", "NONE": "gray"}
+        for stn in surge_results:
+            if stn["risk"] == "NONE":
+                continue
+            lf_str = f"~{stn['hours_to_landfall']}h" if stn["hours_to_landfall"] else "—"
+            folium.Marker(
+                [stn["lat"], stn["lon"]],
+                popup=folium.Popup(
+                    f"<b>{stn['station']}</b><br>"
+                    f"Surge risk: <b>{stn['risk']}</b><br>"
+                    f"Est. surge: {stn['surge_m']} m<br>"
+                    f"Distance: {stn['distance_km']} km<br>"
+                    f"ETA: {lf_str}",
+                    max_width=200,
+                ),
+                tooltip=f"🌊 {stn['station']} — {stn['surge_m']}m ({stn['risk']})",
+                icon=folium.Icon(
+                    color=surge_colors.get(stn["risk"], "blue"),
+                    icon="home", prefix="glyphicon"
+                ),
+            ).add_to(m)
 
     folium.LayerControl().add_to(m)
     return m
@@ -717,6 +782,40 @@ if wx and not any(k.startswith("_") for k in wx):
 # ── main layout ───────────────────────────────────────────────────────────────
 col_map, col_panel = st.columns([1.2, 1], gap="large")
 
+# ── Track forecast ────────────────────────────────────────────────────────────
+track_forecast = None
+if _TRACK_MODEL:
+    try:
+        history = [
+            {"lat": storm_lat - lat_change*3, "lon": storm_lon - lon_change*3,
+             "wind": max(20, storm_wind - abs(wind_change)*3),
+             "month": storm_month, "hour": storm_hour},
+            {"lat": storm_lat - lat_change*2, "lon": storm_lon - lon_change*2,
+             "wind": max(20, storm_wind - abs(wind_change)*2),
+             "month": storm_month, "hour": storm_hour},
+            {"lat": storm_lat - lat_change,   "lon": storm_lon - lon_change,
+             "wind": max(20, storm_wind - abs(wind_change)),
+             "month": storm_month, "hour": storm_hour},
+            {"lat": storm_lat,                "lon": storm_lon,
+             "wind": float(storm_wind),
+             "month": storm_month, "hour": storm_hour},
+        ]
+        track_forecast = ml_predict_track(history, n_steps=8)
+    except Exception as e:
+        track_forecast = None
+
+# ── Surge risk ────────────────────────────────────────────────────────────────
+surge_results = None
+if _SURGE_MODEL:
+    try:
+        surge_results = estimate_surge_risk(
+            storm_lat, storm_lon, float(storm_wind),
+            track_forecast=track_forecast,
+            msl_hpa=wx_clean.get("msl") if wx_clean else None,
+        )
+    except Exception:
+        surge_results = None
+
 with col_map:
     st.subheader("🗺️ Bay of Bengal — Live Map")
     fmap = make_folium_map(
@@ -724,6 +823,8 @@ with col_map:
         lat_change, lon_change,
         track_df=df_tracks,
         active_cyclones=st.session_state.get("active_cyclones") or [],
+        track_forecast=track_forecast,
+        surge_results=surge_results,
     )
     st_folium(fmap, width=700, height=480, returned_objects=[])
 
@@ -778,6 +879,42 @@ with col_panel:
         st.dataframe(wx_df, hide_index=True, use_container_width=True)
 
 # ── model performance + feature importance ────────────────────────────────────
+# ── Track + Surge sections ────────────────────────────────────────────────────
+st.markdown("---")
+tcol, scol = st.columns(2, gap="large")
+
+with tcol:
+    st.subheader("🧭 Track Forecast (48h)")
+    if track_forecast:
+        tdf = pd.DataFrame(track_forecast)
+        tdf["hours_ahead"] = tdf["hours_ahead"].apply(lambda x: f"+{x}h")
+        tdf.columns = ["Lat (°N)", "Lon (°E)", "Ahead"]
+        tdf = tdf[["Ahead","Lat (°N)","Lon (°E)"]]
+        st.dataframe(tdf, hide_index=True, use_container_width=True)
+        st.caption("ML model (Random Forest, IBTrACS). 24h MAE ~30 km, 48h MAE ~61 km.")
+    else:
+        st.info("Track model not loaded.")
+
+with scol:
+    st.subheader("🌊 Storm Surge Risk")
+    if surge_results:
+        risk_colors = {"EXTREME":"#b71c1c","HIGH":"#e53935",
+                       "MODERATE":"#fb8c00","LOW":"#43a047","NONE":"#9e9e9e"}
+        sdf = pd.DataFrame([{
+            "Station":      r["station"],
+            "Risk":         r["risk"],
+            "Surge (m)":    r["surge_m"],
+            "Distance (km)":r["distance_km"],
+        } for r in surge_results if r["risk"] != "NONE"])
+        if len(sdf):
+            st.dataframe(sdf, hide_index=True, use_container_width=True)
+        else:
+            st.success("✅ No stations within 500 km at significant risk.")
+        st.caption("⚠️ Heuristic estimate (physics-based index, not a trained ML model). "
+                   "For operational use, replace with ADCIRC/FVCOM simulations.")
+    else:
+        st.info("Surge module not loaded.")
+
 if model_results:
     st.markdown("---")
     st.subheader("📊 Model Performance & Feature Importance")
