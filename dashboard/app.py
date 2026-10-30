@@ -891,7 +891,7 @@ with tcol:
         tdf.columns = ["Lat (°N)", "Lon (°E)", "Ahead"]
         tdf = tdf[["Ahead","Lat (°N)","Lon (°E)"]]
         st.dataframe(tdf, hide_index=True, use_container_width=True)
-        st.caption("ML model (Random Forest, IBTrACS). 24h MAE ~30 km, 48h MAE ~61 km.")
+        st.caption("ML model (Random Forest, IBTrACS). 24h MAE ~18 km, 48h MAE ~134 km (leave-one-storm-out CV).")
     else:
         st.info("Track model not loaded.")
 
