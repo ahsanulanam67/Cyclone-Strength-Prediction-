@@ -19,6 +19,7 @@ import joblib
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import StandardScaler
 from sklearn.multioutput import MultiOutputRegressor
+from sklearn.model_selection import GroupKFold
 
 INPUT_STEPS  = 4   # 4 x 6h = 24h history
 OUTPUT_STEPS = 8   # 8 x 6h = 48h forecast
@@ -61,7 +62,7 @@ def load_ibtracs():
 
 
 def build_sequences(df):
-    X_list, Y_list = [], []
+    X_list, Y_list, SID_list = [], [], []
     for sid, grp in df.groupby("SID"):
         grp = grp.sort_values("DT" if "DT" in grp.columns else grp.columns[0]).reset_index(drop=True)
         lats  = grp["LAT"].values
@@ -97,8 +98,11 @@ def build_sequences(df):
 
             X_list.append(feat)
             Y_list.append(tgt)
+            SID_list.append(sid)
 
-    return np.array(X_list, dtype=np.float32), np.array(Y_list, dtype=np.float32)
+    return (np.array(X_list, dtype=np.float32),
+            np.array(Y_list, dtype=np.float32),
+            np.array(SID_list))
 
 
 def main():
@@ -107,27 +111,38 @@ def main():
     print(f"  {len(df)} observations, {df['SID'].nunique()} storms")
 
     print("Building sequences...")
-    X, Y = build_sequences(df)
+    X, Y, sids = build_sequences(df)
     print(f"  {len(X)} training sequences, {X.shape[1]} features, {Y.shape[1]} targets")
 
     if len(X) < 10:
         print("ERROR: Not enough sequences to train. Check ibtracs_bob.csv has Bay of Bengal storms.")
         sys.exit(1)
 
+    # Leave-one-storm-out cross-validation for honest MAE
+    print("Evaluating with leave-one-storm-out CV...")
+    gkf = GroupKFold(n_splits=min(5, len(np.unique(sids))))
+    cv_mae_24h, cv_mae_48h = [], []
+    for train_idx, test_idx in gkf.split(X, Y, groups=sids):
+        sc = StandardScaler()
+        Xtr = sc.fit_transform(X[train_idx])
+        Xte = sc.transform(X[test_idx])
+        rf_cv = RandomForestRegressor(n_estimators=100, max_depth=10,
+                                      n_jobs=-1, random_state=42)
+        m_cv = MultiOutputRegressor(rf_cv, n_jobs=1)
+        m_cv.fit(Xtr, Y[train_idx])
+        p = m_cv.predict(Xte)
+        cv_mae_24h.append(np.mean(np.abs(p[:, :2]   - Y[test_idx, :2]))   * 111)
+        cv_mae_48h.append(np.mean(np.abs(p[:, 14:16] - Y[test_idx, 14:16])) * 111)
+    print(f"  CV MAE  24h: {np.mean(cv_mae_24h):.1f} km   48h: {np.mean(cv_mae_48h):.1f} km  (leave-one-storm-out)")
+
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
-    print("Training Random Forest (300 trees)... this takes ~2-3 minutes")
+    print("Training final Random Forest (300 trees) on all data...")
     rf = RandomForestRegressor(n_estimators=300, max_depth=10,
                                n_jobs=-1, random_state=42)
     model = MultiOutputRegressor(rf, n_jobs=1)
     model.fit(X_scaled, Y)
-
-    # Quick MAE check
-    preds = model.predict(X_scaled[:200])
-    mae_24h = np.mean(np.abs(preds[:, :2] - Y[:200, :2])) * 111  # degrees → km
-    mae_48h = np.mean(np.abs(preds[:, 14:16] - Y[:200, 14:16])) * 111
-    print(f"  Train MAE  24h: {mae_24h:.1f} km   48h: {mae_48h:.1f} km")
 
     MODEL_PATH.parent.mkdir(exist_ok=True)
     joblib.dump({
