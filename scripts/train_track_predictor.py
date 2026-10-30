@@ -34,6 +34,9 @@ def load_ibtracs():
     # Keep Bay of Bengal storms
     if "BASIN" in df.columns:
         df = df[df["BASIN"].str.strip() == "NI"].copy()
+    # WMO_WIND is the standard column; fall back to USA_WIND
+    wind_col = "WMO_WIND" if "WMO_WIND" in df.columns else "USA_WIND" if "USA_WIND" in df.columns else "WIND"
+    df = df.rename(columns={wind_col: "WIND"})
     df = df.dropna(subset=["LAT", "LON", "WIND"]).copy()
     df["LAT"]   = pd.to_numeric(df["LAT"],  errors="coerce")
     df["LON"]   = pd.to_numeric(df["LON"],  errors="coerce")
