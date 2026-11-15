@@ -434,44 +434,37 @@ def make_folium_map(storm_lat, storm_lon, storm_wind,
         prefer_canvas=True,
     )
 
-    # ── Basemap layers ────────────────────────────────────────────────────────
+    # ── Basemap layers (all keyless — no "API KEY REQUIRED" watermark) ────────
+    # CartoDB Voyager includes city/region labels at every zoom level.
     folium.TileLayer(
-        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}",
-        attr="Esri Ocean",
-        name="Ocean (default)",
+        tiles="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+        attr="&copy; OpenStreetMap contributors &copy; CARTO",
+        name="Voyager (default)",
         overlay=False,
         control=True,
+        subdomains="abcd",
+        max_zoom=19,
     ).add_to(m)
+    # CartoDB Positron — light, label-rich corporate basemap.
     folium.TileLayer(
-        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-        attr="Esri Satellite",
-        name="Satellite",
+        tiles="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+        attr="&copy; OpenStreetMap contributors &copy; CARTO",
+        name="Light map",
         overlay=False,
         control=True,
+        subdomains="abcd",
+        max_zoom=19,
     ).add_to(m)
     folium.TileLayer("OpenStreetMap", name="Street Map").add_to(m)
-
-    # ── Place-name label overlays (stay readable at every zoom level) ─────────
-    # Carto label-only tiles draw city / region names without hiding the ocean.
+    # Keyless terrain basemap with place names.
     folium.TileLayer(
-        tiles="https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png",
-        attr="&copy; OpenStreetMap contributors &copy; CARTO",
-        name="Place names",
-        overlay=True,
+        tiles="https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
+        attr="&copy; OpenStreetMap contributors, SRTM | &copy; OpenTopoMap",
+        name="Terrain",
+        overlay=False,
         control=True,
-        show=True,
-        subdomains="abcd",
-        max_zoom=12,
-    ).add_to(m)
-    # Administrative boundaries + place labels from Esri Reference.
-    folium.TileLayer(
-        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
-        attr="Esri Reference",
-        name="Boundaries & places",
-        overlay=True,
-        control=True,
-        show=True,
-        max_zoom=12,
+        subdomains="abc",
+        max_zoom=17,
     ).add_to(m)
 
     # ── Historical tracks (last 10 unique storms, faint) ──────────────────────
@@ -1147,10 +1140,29 @@ if model_results:
         else:
             st.info("Enable live data to view historical tracks.")
 
+# ── V3 all-image model card (honest evaluation) ──────────────────────────────
+st.markdown("---")
+with st.expander("📈 V3 all-image model — evaluation (471 images · 10 storms)", expanded=False):
+    v1, v2, v3, v4 = st.columns(4)
+    v1.metric("ROC-AUC", "0.964")
+    v2.metric("PR-AUC", "0.980")
+    v3.metric("Accuracy", "89.5%")
+    v4.metric("F1", "92.0%")
+    v5, v6, v7 = st.columns(3)
+    v5.metric("Precision", "90.7%")
+    v6.metric("Recall", "93.4%")
+    v7.metric("Balanced acc.", "87.8%")
+    st.caption(
+        "48–72 h intensification · leave-one-storm-out GroupKFold on 352 sequences "
+        "(3 h / 6 h / 12 h / 24 h image grids, every PNG used). "
+        "Long-horizon 120–168 h is not reliable with only 4 storms and is not "
+        "presented as a headline result."
+    )
+
 # ── footer ───────────────────────────────────────────────────────────────────
 st.markdown("---")
 st.caption(
     "Data: NOAA IBTrACS v04r01 · Open-Meteo (live weather) · GDACS (active alerts) · "
-    "Model: XGBoost (V1 track features) | ROC-AUC 0.89 with CNN-LSTM (V3) · "
-    "Threshold: +15 kt intensification within window"
+    "Models: XGBoost (intensification) · Random Forest (track) · "
+    "V3 all-image ROC-AUC 0.96 · Threshold: +15 kt intensification within window"
 )

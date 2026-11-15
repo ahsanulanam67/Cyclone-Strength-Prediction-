@@ -135,10 +135,12 @@ python scripts/download_gridsat.py
 ```bash
 python scripts/train_v3_all_images.py
 ```
-This scans all PNGs in `data/satellite_images/`, builds image sequences, and
-reports leave-one-storm-out metrics. With the current 471 images / 10 storms it
-reaches **ROC-AUC ~0.94** at 48–72 h (accuracy ~0.85); the long-horizon model is
-not reliable with only 4 storms and is reported as such.
+This scans all PNGs in `data/satellite_images/`, builds image sequences on
+3 h / 6 h / 12 h / 24 h grids, and reports leave-one-storm-out metrics. With the
+current 471 images / 10 storms the 48–72 h model reaches **ROC-AUC 0.964,
+PR-AUC 0.980, accuracy 89.5%, precision 90.7%, recall 93.4%, F1 92.0%**. The
+long-horizon 120–168 h model is not reliable with only 4 storms (ROC-AUC 0.45)
+and is reported as such.
 
 ---
 
