@@ -78,6 +78,7 @@ Cyclone-Strength-Prediction-/
 │   └── v3_cnn_lstm_fusion.ipynb    ← V3 CNN-LSTM satellite model
 ├── scripts/
 │   ├── train_track_predictor.py    ← Train 48h track forecast model
+│   ├── train_v3_all_images.py      ← Train image model on all satellite PNGs
 │   ├── download_era5.py            ← Download ERA5 reanalysis data
 │   ├── download_gridsat.py         ← Download GridSat-B1 satellite images
 │   └── download_hursat.py
@@ -129,6 +130,15 @@ See `data/era5/README_DOWNLOAD.md` for full instructions.
 ```bash
 python scripts/download_gridsat.py
 ```
+
+### Full image-model evaluation (uses every image on disk)
+```bash
+python scripts/train_v3_all_images.py
+```
+This scans all PNGs in `data/satellite_images/`, builds image sequences, and
+reports leave-one-storm-out metrics. With the current 471 images / 10 storms it
+reaches **ROC-AUC ~0.94** at 48–72 h (accuracy ~0.85); the long-horizon model is
+not reliable with only 4 storms and is reported as such.
 
 ---
 

@@ -29,7 +29,7 @@ except Exception:
     _TRACK_MODEL = False
 
 try:
-    from src.surge_risk import estimate_surge_risk
+    from src.surge_risk import estimate_surge_risk, COASTAL_STATIONS
     _SURGE_MODEL = True
 except Exception:
     _SURGE_MODEL = False
@@ -62,25 +62,93 @@ st.set_page_config(
     layout="wide",
 )
 
-# ── styling ──────────────────────────────────────────────────────────────────
+# ── styling — corporate weather theme ───────────────────────────────────────
 st.markdown("""
 <style>
-    .risk-box {
-        padding: 1.2rem 1.5rem;
-        border-radius: 12px;
-        text-align: center;
-        font-size: 1.1rem;
-        font-weight: 600;
-        margin-bottom: 0.5rem;
+    /* ── weather-sky background ── */
+    .stApp {
+        background:
+            radial-gradient(1100px 520px at 8% -5%, rgba(255,255,255,0.92), transparent 62%),
+            radial-gradient(900px 480px at 92% 4%, rgba(255,255,255,0.55), transparent 60%),
+            radial-gradient(700px 380px at 50% 105%, rgba(120,180,235,0.30), transparent 65%),
+            linear-gradient(180deg, #d9ecff 0%, #e8f4ff 38%, #f6fbff 100%);
+        background-attachment: fixed;
     }
-    .risk-low      { background: #d4edda; color: #155724; }
-    .risk-moderate { background: #fff3cd; color: #856404; }
-    .risk-high     { background: #f8d7da; color: #721c24; }
-    .metric-label  { font-size: 0.85rem; color: #6c757d; margin-bottom: 0.2rem; }
-    .live-badge    { background: #28a745; color: white; padding: 2px 8px;
-                     border-radius: 8px; font-size: 0.75rem; font-weight: 600; }
-    .weather-card  { background: #f8f9fa; border-radius: 10px; padding: 0.8rem 1rem;
-                     margin-bottom: 0.5rem; border-left: 4px solid #0d6efd; }
+    /* soft drifting cloud veil */
+    .stApp::before {
+        content: "";
+        position: fixed;
+        inset: -10% -20%;
+        background:
+            radial-gradient(closest-side, rgba(255,255,255,0.70), transparent) 10% 20%/480px 220px no-repeat,
+            radial-gradient(closest-side, rgba(255,255,255,0.55), transparent) 70% 12%/620px 260px no-repeat,
+            radial-gradient(closest-side, rgba(255,255,255,0.45), transparent) 45% 62%/700px 300px no-repeat;
+        animation: cloudDrift 90s linear infinite alternate;
+        pointer-events: none;
+        z-index: 0;
+    }
+    @keyframes cloudDrift {
+        from { transform: translate3d(-2%, 0, 0); }
+        to   { transform: translate3d(3%, -1.5%, 0); }
+    }
+    .block-container { position: relative; z-index: 1; padding-top: 2.2rem; }
+
+    /* ── typography ── */
+    h1, h2, h3 { letter-spacing: -0.02em; color: #102a43; }
+    h1 { font-weight: 800; }
+    .corp-kicker {
+        display: inline-block; font-size: 0.72rem; font-weight: 700;
+        letter-spacing: 0.16em; text-transform: uppercase; color: #0b5ed7;
+        background: rgba(13,110,253,0.10); padding: 4px 10px; border-radius: 999px;
+    }
+
+    /* ── sidebar glass panel ── */
+    section[data-testid="stSidebar"] {
+        background: rgba(255,255,255,0.80);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        border-right: 1px solid rgba(13,110,253,0.14);
+    }
+    section[data-testid="stSidebar"] h2 { font-size: 1.05rem; color: #0b3d91; }
+
+    /* ── risk / stat cards ── */
+    .risk-box {
+        padding: 1.25rem 1.4rem;
+        border-radius: 16px;
+        text-align: center;
+        font-size: 1.05rem;
+        font-weight: 600;
+        margin-bottom: 0.65rem;
+        border: 1px solid rgba(255,255,255,0.7);
+        box-shadow: 0 8px 24px rgba(16,42,67,0.10);
+        backdrop-filter: blur(8px);
+    }
+    .risk-low      { background: linear-gradient(135deg,#e6f7ee,#d1f0e0); color: #0f5132; border-left: 5px solid #198754; }
+    .risk-moderate { background: linear-gradient(135deg,#fff8e1,#ffeeba); color: #7a5b00; border-left: 5px solid #f0ad4e; }
+    .risk-high     { background: linear-gradient(135deg,#fde8ea,#f9d3d7); color: #842029; border-left: 5px solid #dc3545; }
+    .metric-label  { font-size: 0.78rem; color: #5b7083; margin-bottom: 0.2rem;
+                     text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+    .live-badge    { background: linear-gradient(135deg,#0d6efd,#0b5ed7); color: white;
+                     padding: 3px 10px; border-radius: 999px; font-size: 0.7rem;
+                     font-weight: 700; letter-spacing: 0.08em; }
+    .weather-card  { background: rgba(255,255,255,0.78); border-radius: 14px;
+                     padding: 0.85rem 1rem; margin-bottom: 0.55rem;
+                     border-left: 4px solid #0d6efd;
+                     box-shadow: 0 4px 14px rgba(16,42,67,0.07); }
+    .loc-card      { background: linear-gradient(135deg, rgba(13,110,253,0.10), rgba(13,110,253,0.03));
+                     border: 1px solid rgba(13,110,253,0.18); border-radius: 14px;
+                     padding: 0.75rem 0.9rem; margin-bottom: 0.6rem; }
+    .loc-card .latlon { font-size: 1.05rem; font-weight: 800; color: #0b3d91; }
+    .loc-card .place  { font-size: 0.8rem; color: #5b7083; }
+
+    /* metric containers */
+    div[data-testid="stMetric"] {
+        background: rgba(255,255,255,0.72);
+        border: 1px solid rgba(13,110,253,0.10);
+        border-radius: 12px;
+        padding: 0.6rem 0.75rem;
+        box-shadow: 0 3px 10px rgba(16,42,67,0.06);
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -360,7 +428,10 @@ def make_folium_map(storm_lat, storm_lon, storm_wind,
     m = folium.Map(
         location=[13, 89],
         zoom_start=5,
+        min_zoom=3,
+        max_zoom=12,
         tiles=None,
+        prefer_canvas=True,
     )
 
     # ── Basemap layers ────────────────────────────────────────────────────────
@@ -379,6 +450,29 @@ def make_folium_map(storm_lat, storm_lon, storm_wind,
         control=True,
     ).add_to(m)
     folium.TileLayer("OpenStreetMap", name="Street Map").add_to(m)
+
+    # ── Place-name label overlays (stay readable at every zoom level) ─────────
+    # Carto label-only tiles draw city / region names without hiding the ocean.
+    folium.TileLayer(
+        tiles="https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png",
+        attr="&copy; OpenStreetMap contributors &copy; CARTO",
+        name="Place names",
+        overlay=True,
+        control=True,
+        show=True,
+        subdomains="abcd",
+        max_zoom=12,
+    ).add_to(m)
+    # Administrative boundaries + place labels from Esri Reference.
+    folium.TileLayer(
+        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+        attr="Esri Reference",
+        name="Boundaries & places",
+        overlay=True,
+        control=True,
+        show=True,
+        max_zoom=12,
+    ).add_to(m)
 
     # ── Historical tracks (last 10 unique storms, faint) ──────────────────────
     if track_df is not None and len(track_df):
@@ -491,28 +585,79 @@ def make_folium_map(storm_lat, storm_lon, storm_wind,
         tooltip="Bay of Bengal study region",
     ).add_to(m)
 
-    # ── ML Track forecast (dashed blue line) ─────────────────────────────────
+    # ── ML track forecast — long red "live" track with sequential pulses ─────
     if track_forecast:
-        forecast_coords = [[storm_lat, storm_lon]] + \
-                          [[fp["lat"], fp["lon"]] for fp in track_forecast]
+        # Extend the 48 h model output to 120 h by persisting the final motion.
+        ext = [dict(fp) for fp in track_forecast]
+        last = ext[-1]
+        prev = ext[-2] if len(ext) >= 2 else {"lat": storm_lat, "lon": storm_lon,
+                                              "hours_ahead": 0}
+        dlat = last["lat"] - prev["lat"]
+        dlon = last["lon"] - prev["lon"]
+        step = max(1, last["hours_ahead"] - prev["hours_ahead"])
+        h = last["hours_ahead"]
+        while h < 120:
+            h += step
+            n = (h - last["hours_ahead"]) / step
+            ext.append({
+                "lat": round(last["lat"] + dlat * n, 2),
+                "lon": round(last["lon"] + dlon * n, 2),
+                "hours_ahead": h,
+                "extrapolated": True,
+            })
+        for fp in ext:
+            fp.setdefault("extrapolated", False)
+
+        model_pts = [fp for fp in ext if not fp["extrapolated"]]
+        ext_pts   = [fp for fp in ext if fp["extrapolated"]]
+
+        model_coords = [[storm_lat, storm_lon]] + \
+                       [[fp["lat"], fp["lon"]] for fp in model_pts]
+        # wide translucent glow under the track
         folium.PolyLine(
-            forecast_coords,
-            color="#0055cc",
-            weight=2.5,
-            opacity=0.85,
-            dash_array="8 4",
-            tooltip="ML Track Forecast (48h)",
+            model_coords, color="#ff1f1f", weight=12, opacity=0.16,
+            tooltip="Predicted cyclone track",
         ).add_to(m)
-        for fp in track_forecast:
-            if fp["hours_ahead"] % 12 == 0:
+        # solid red model track (0–48 h)
+        folium.PolyLine(
+            model_coords, color="#e01010", weight=3.6, opacity=0.95,
+            tooltip="ML track forecast — 48 h",
+        ).add_to(m)
+        # extended track (48–120 h) drawn dashed and lighter
+        if ext_pts:
+            ext_coords = [[model_pts[-1]["lat"], model_pts[-1]["lon"]]] + \
+                         [[fp["lat"], fp["lon"]] for fp in ext_pts]
+            folium.PolyLine(
+                ext_coords, color="#ff4d4d", weight=2.6, opacity=0.72,
+                dash_array="7 6",
+                tooltip="Extended track — 120 h (linear extrapolation)",
+            ).add_to(m)
+
+        # Twinkling forecast dots: each lights up in sequence, then loops.
+        total = max(1, len(ext))
+        for i, fp in enumerate(ext):
+            delay = (i / total) * 8.0
+            size = 22 if not fp["extrapolated"] else 16
+            note = " (extrapolated)" if fp["extrapolated"] else ""
+            folium.Marker(
+                [fp["lat"], fp["lon"]],
+                icon=folium.DivIcon(
+                    icon_size=(size, size),
+                    icon_anchor=(size / 2, size / 2),
+                    html=(f'<div class="cx-pulse" '
+                          f'style="animation-delay:{delay:.2f}s;--dot:{size}px;"></div>'),
+                ),
+                tooltip=f"+{fp['hours_ahead']}h → {fp['lat']:.1f}°N, {fp['lon']:.1f}°E{note}",
+            ).add_to(m)
+            if fp["hours_ahead"] % 24 == 0:
                 folium.CircleMarker(
                     [fp["lat"], fp["lon"]],
-                    radius=5,
-                    color="#0055cc",
+                    radius=3.5,
+                    color="#e01010",
                     fill=True,
-                    fill_color="#4499ff",
-                    fill_opacity=0.8,
-                    tooltip=f"+{fp['hours_ahead']}h → {fp['lat']:.1f}°N, {fp['lon']:.1f}°E",
+                    fill_color="#ff6b6b",
+                    fill_opacity=0.9,
+                    tooltip=f"+{fp['hours_ahead']}h",
                 ).add_to(m)
 
     # ── Surge risk at coastal stations ────────────────────────────────────────
@@ -539,6 +684,30 @@ def make_folium_map(storm_lat, storm_lon, storm_wind,
                     icon="home", prefix="glyphicon"
                 ),
             ).add_to(m)
+
+    # ── CSS for the animated / twinkling forecast track ──────────────────────
+    m.get_root().header.add_child(folium.Element("""
+    <style>
+      .leaflet-div-icon { background: transparent !important; border: none !important; }
+      @keyframes cxPulse {
+        0%   { opacity: 0;    transform: scale(0.25); }
+        5%   { opacity: 1;    transform: scale(1.05);
+               box-shadow: 0 0 18px 7px rgba(255, 40, 40, 0.85); }
+        15%  { opacity: 0.9;  transform: scale(1.9);
+               box-shadow: 0 0 22px 10px rgba(255, 40, 40, 0.0); }
+        30%  { opacity: 0;    transform: scale(2.2); }
+        100% { opacity: 0;    transform: scale(0.25); }
+      }
+      .cx-pulse {
+        width: var(--dot, 20px);
+        height: var(--dot, 20px);
+        border-radius: 50%;
+        background: radial-gradient(circle, #ffffff 0%, #ff3b3b 45%, rgba(255,59,59,0) 72%);
+        box-shadow: 0 0 12px 4px rgba(255, 40, 40, 0.65);
+        animation: cxPulse 8s infinite ease-out;
+      }
+    </style>
+    """))
 
     folium.LayerControl().add_to(m)
     return m
@@ -625,7 +794,23 @@ with st.sidebar:
 
     # ── Live weather fetch ────────────────────────────────────────────────────
     st.header("🌐 Live Weather (Open-Meteo)")
-    st.caption(f"Will fetch for Lat {storm_lat:.1f}°N, Lon {storm_lon:.1f}°E")
+
+    # Current location card — always visible in the sidebar
+    _stations = globals().get("COASTAL_STATIONS", [])
+    if _stations:
+        _near = min(_stations,
+                    key=lambda s: haversine_km(storm_lat, storm_lon, s["lat"], s["lon"]))
+        _near_km = haversine_km(storm_lat, storm_lon, _near["lat"], _near["lon"])
+        _place_txt = f"Nearest: {_near['name']} · {_near_km:.0f} km"
+    else:
+        _place_txt = "Bay of Bengal"
+    st.markdown(
+        f'<div class="loc-card">'
+        f'<div class="latlon">📍 {storm_lat:.2f}°N, {storm_lon:.2f}°E</div>'
+        f'<div class="place">{_place_txt}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
     if st.button("⚡ Fetch Live Weather Now", use_container_width=True):
         with st.spinner("Fetching from Open-Meteo…"):
@@ -641,6 +826,23 @@ with st.sidebar:
             st.warning(f"Partial fetch: {errors[0]}")
         else:
             st.success("✅ Live weather loaded!")
+
+    # ── Live conditions in the sidebar ────────────────────────────────────────
+    if wx and not any(k.startswith("_") for k in wx):
+        def _fmt_wx(key, unit, dec=1):
+            val = wx.get(key)
+            return f"{val:.{dec}f} {unit}" if isinstance(val, (int, float)) else "—"
+
+        st.markdown("#### 🌡️ Conditions Here")
+        wc1, wc2 = st.columns(2)
+        wc1.metric("Temp", _fmt_wx("t2m", "°C"))
+        wc2.metric("SST", _fmt_wx("sst", "°C"))
+        wc1.metric("Pressure", _fmt_wx("msl", "hPa", 0))
+        wc2.metric("Wind", _fmt_wx("wind_speed_ms", "m/s"))
+        wc1.metric("Dewpoint", _fmt_wx("d2m", "°C"))
+        wc2.metric("Rain", _fmt_wx("tp", "mm", 2))
+        if wx.get("wind_dir_deg") is not None:
+            st.caption(f"Wind direction: {wx['wind_dir_deg']:.0f}°")
 
 # ── data + model ─────────────────────────────────────────────────────────────
 df_tracks    = None
